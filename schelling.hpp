@@ -5,8 +5,10 @@
 #include <iomanip>
 #include <cstdlib>
 #include <cstdio>
+#include <cmath>
 #include <ctime>
 #include <vector>
+#include <deque>
 #include <list>
 #include <map>
 #include <SDL2/SDL.h>
@@ -31,13 +33,29 @@
 #define MAX_NBR_THRESH      8
 #define DEFAULT_NBR_THRESH  3
 
-// number of max points to actually populate
+// max number of points to actually populate
 #define POP_PCT  0.90
 
 
 typedef enum _COLOR
-{ BLACK, RED,
+{
+  BLACK,
+  RED,
+  VACANT,
 } COLOR;
+
+typedef enum _SIDE
+{
+  LEFT,
+  RIGHT,
+} SIDE;
+
+typedef enum _DISPLAY_MODE
+{
+  NUM_STEPS,
+  HOMOGENEITY,
+  NUM_DISPLAY_MODES,
+} DISPLAY_MODE;
 
 typedef std::pair<int,int> POINT;
 
@@ -83,6 +101,8 @@ class Sim
     int step_count;
     int num_moves;
 
+    DISPLAY_MODE display_mode;
+
     // this is how the layout of the points is represented
     std::map<POINT,COLOR> grid;
     // precalculated pixel coordinates for each grid position
@@ -91,9 +111,11 @@ class Sim
     std::vector<POINT> vacants_l;
     std::vector<POINT> vacants_r;
     // list of points to be moved on any given turn
-    std::list<POINT> changes;
+    std::deque<POINT> changes;
     // fixed list of coordinate differences for any neighbor
     std::list<POINT> neighbors;
+    // redraw these points after stepping
+    std::map<POINT,COLOR> redraw_grid;
 
     void splash_screen(void);
     void help_screen(void);
@@ -105,6 +127,8 @@ class Sim
     void who_moves(void);
     bool wants_to_move(POINT p, COLOR c, int thresh);
 
+    double calc_homogeneity();
+
     void get_grid_size(void);
     void initialize_grid(void);
     void precalculate_xy(void);
@@ -114,8 +138,10 @@ class Sim
     bool redraw;
 
     Sim(SDL_Renderer * rend, TTF_Font * font, int xmax, int ymax);
+    void reset(void);
     void step(void);
     void display(void);
+    void switch_display_mode(void);
     void increase_nbr_thresh(void);
     void decrease_nbr_thresh(void);
 };

@@ -20,6 +20,7 @@ Sim::Sim(SDL_Renderer * rend, TTF_Font * font, int xmax, int ymax)
   step_count = 0;
   num_moves = 0;
   nbr_thresh = DEFAULT_NBR_THRESH;
+  display_mode = NUM_STEPS;
 
   color.r = 0xff;
   color.g = 0xff;
@@ -41,6 +42,26 @@ Sim::Sim(SDL_Renderer * rend, TTF_Font * font, int xmax, int ymax)
 }
 
 /*******************************************************************************
+ * METHOD: reset
+ ******************************************************************************/
+void Sim::reset(void)
+{
+  step_count = 0;
+  num_moves = 0;
+  nbr_thresh = DEFAULT_NBR_THRESH;
+  display_mode = NUM_STEPS;
+
+  grid.clear();
+  vacants_l.clear();
+  vacants_r.clear();
+
+  initialize_grid();
+
+  draw_stats();
+  draw_board_all();
+}
+
+/*******************************************************************************
  * METHOD: step
  ******************************************************************************/
 void Sim::step(void)
@@ -50,25 +71,82 @@ void Sim::step(void)
   // figure out which neighbors are moving
   who_moves();
 
-  std::vector<POINT> * vacant;
-  for (auto &item : changes)
+  redraw_grid.clear();
+  std::vector<POINT> * vacant_dest;
+  std::vector<POINT> * vacant_new;
+  SIDE side = LEFT;
+
+  num_moves = changes.size();
+  while ( !changes.empty() )
   {
-    // currently on the left, move to the right
-    if (item.first < x_midpoint)
-    { vacant = &vacants_r; }
-    // currently on the right, move to the left
+    POINT item;
+    // check for room to move from left to right
+    if (side == LEFT)
+    {
+      if (vacants_r.empty() || (changes.front().first > x_midpoint))
+      {
+        side = RIGHT;
+        continue;
+      }
+      else
+      {
+        item = changes.front();
+        vacant_dest = &vacants_r;
+        vacant_new  = &vacants_l;
+      }
+    }
+    // check for room to move from right to left
     else
-    { vacant = &vacants_l; }
+    {
+      if (vacants_l.empty() || (changes.back().first < x_midpoint))
+      {
+        side = LEFT;
+        continue;
+      }
+      else
+      {
+        item = changes.back();
+        vacant_dest = &vacants_l;
+        vacant_new  = &vacants_r;
+      }
+    }
+
     // pick a random vacant space
-    POINT dest = vacant->at( (int)(rand() % vacant->size()) );
+    int index = rand() % vacant_dest->size();
+    POINT dest = vacant_dest->at(index);
     // move this point to the vacant spot
-    grid[{dest.first,dest.second}] = grid[{item.first,item.second}];
+    grid[dest] = grid[item];
     // remove point from vacants
+    vacant_dest->erase(vacant_dest->begin() + index);
     // remove original point from grid
+    grid.erase(item);
+    vacant_new->push_back(item);
     // add to changes
+    redraw_grid[dest] = grid[dest];
+    redraw_grid[item] = VACANT;
+
+    // switch sides
+    if (side == RIGHT)
+    {
+      changes.pop_back();
+      side = LEFT;
+    }
+    else
+    {
+      changes.pop_front();
+      side = RIGHT;
+    }
   }
 
   step_count++;
+}
+
+/*******************************************************************************
+ * METHOD: switch_display_mode
+ ******************************************************************************/
+void Sim::switch_display_mode(void)
+{
+  display_mode = (DISPLAY_MODE)((display_mode + 1) % NUM_DISPLAY_MODES);
 }
 
 /*******************************************************************************
@@ -163,8 +241,31 @@ void Sim::draw_board_all(void)
  ******************************************************************************/
 void Sim::draw_board_changes(void)
 {
-
-
+  int xpos;
+  int ypos;
+  for (auto &item : redraw_grid)
+  {
+    xpos = pix_pos[{item.first.first,item.first.second}].first;
+    ypos = pix_pos[{item.first.first,item.first.second}].second;
+    switch (item.second)
+    {
+      case BLACK:
+        filledCircleColor(rend,xpos,ypos,RADIUS,BLACK_COLOR);
+        break;
+      case RED:
+        filledCircleColor(rend,xpos,ypos,RADIUS,RED_COLOR);
+        break;
+      case VACANT:
+        SDL_Rect cover_vacant;
+        cover_vacant.x = xpos - RADIUS;
+        cover_vacant.y = ypos - RADIUS;
+        cover_vacant.h = DIAMETER + CIRCLE_BUFFER;
+        cover_vacant.w = DIAMETER + CIRCLE_BUFFER;;
+        SDL_SetRenderDrawColor(rend,0x00,0x00,0x00,0xff);
+        SDL_RenderFillRect(rend,&cover_vacant);
+        break;
+    }
+  }
 }
 
 /*******************************************************************************
@@ -172,40 +273,34 @@ void Sim::draw_board_changes(void)
  ******************************************************************************/
 void Sim::draw_stats(void)
 {
+  int stats_ypos = ymax - font_height - Y_BUFF_PIXELS;
   // redraw stats region
   SDL_SetRenderDrawColor(rend,0x00,0x00,0x00,0xff);
   SDL_RenderFillRect(rend,&stats_region);
-  // display number of steps
-  std::string text = "Number of steps: " + std::to_string(step_count);
-  SDL_Surface * surface = TTF_RenderText_Solid(font,text.c_str(),color);
-  SDL_Texture * texture = SDL_CreateTextureFromSurface(rend,surface);
 
-  SDL_Rect dst;
-  SDL_QueryTexture(texture,NULL,NULL,&dst.w,&dst.h);
-  dst.y = ymax - dst.h - Y_BUFF_PIXELS;
-  dst.x = X_BUFF_PIXELS;
-  SDL_RenderCopy(rend,texture,NULL,&dst);
-
-  SDL_DestroyTexture(texture);
-  SDL_FreeSurface(surface);
-
-  // display number of moves
-  text = "Number of moves: " + std::to_string(num_moves);
-  surface = TTF_RenderText_Solid(font,text.c_str(),color);
-  texture = SDL_CreateTextureFromSurface(rend,surface);
-  int prev_width = dst.w;
-  SDL_QueryTexture(texture,NULL,NULL,&dst.w,&dst.h);
-  dst.y = ymax - dst.h - Y_BUFF_PIXELS;
-  dst.x = prev_width + X_BUFF_PIXELS*10; // whatever, who cares
-  SDL_RenderCopy(rend,texture,NULL,&dst);
-
-  SDL_DestroyTexture(texture);
-  SDL_FreeSurface(surface);
+  std::string text;
+  switch (display_mode)
+  {
+    case NUM_STEPS:
+      text = "Number of steps: " + std::to_string(step_count);
+      display_text(text,X_BUFF_PIXELS*2,stats_ypos);
+      // display number of moves
+      text = "Number of moves: " + std::to_string(num_moves);
+      display_text(text,xmax/2,stats_ypos);
+      break;
+    case HOMOGENEITY:
+      text = "Homogeneity: " + std::to_string(calc_homogeneity()) +"%";
+      display_text(text,X_BUFF_PIXELS*2,stats_ypos);
+      break;
+    default:
+      break;
+  }
 
   // display threshold
+  SDL_Rect dst;
   text = "Neighbor Threshold: " + std::to_string(nbr_thresh);
-  surface = TTF_RenderText_Solid(font,text.c_str(),color);
-  texture = SDL_CreateTextureFromSurface(rend,surface);
+  SDL_Surface * surface = TTF_RenderText_Solid(font,text.c_str(),color);
+  SDL_Texture * texture = SDL_CreateTextureFromSurface(rend,surface);
   SDL_QueryTexture(texture,NULL,NULL,&dst.w,&dst.h);
   dst.y = ymax - dst.h - Y_BUFF_PIXELS;
   dst.x = xmax - dst.w - X_BUFF_PIXELS;
@@ -241,7 +336,12 @@ void Sim::who_moves(void)
   for (auto &item : grid)
   {
     if (wants_to_move(item.first,item.second,nbr_thresh))
-    { changes.push_back(item.first); }
+    {
+      if (item.first.first < x_midpoint)
+      { changes.push_front(item.first); }
+      else
+      { changes.push_back(item.first); }
+    }
   }
 }
 
@@ -266,6 +366,36 @@ bool Sim::wants_to_move(POINT p, COLOR c, int thresh)
   // interpret threshold to be minimum number of neighbors to prompt moving
   if (num_diff >= thresh) return true;
   else return false;
+}
+
+/*******************************************************************************
+ * METHOD: calc_homogeneity
+ ******************************************************************************/
+double Sim::calc_homogeneity(void)
+{
+  int x,y;
+  int has_different_neighbor = 0;
+  for (auto &item : grid)
+  {
+    COLOR c = item.second;
+    for (POINT n : neighbors)
+    {
+      x = item.first.first + n.first;
+      y = item.first.second + n.second;
+      if (grid.find({x,y}) == grid.end())
+      { continue; }
+      if ((grid[{x,y}] != VACANT) && (grid[{x,y}] != c))
+      {
+        has_different_neighbor++;
+        break;
+      }
+    }
+  }
+  double pct_homogeneity = ((double)(xgrid_max*ygrid_max-has_different_neighbor))/
+                           ((double)(xgrid_max*ygrid_max));
+  // account for vacant spaces
+  pct_homogeneity /= POP_PCT;
+  return 100*pct_homogeneity;
 }
 
 /*******************************************************************************

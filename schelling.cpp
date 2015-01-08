@@ -52,6 +52,11 @@ int main(int argc, char ** argv)
             d.draw_background();
             s.help = true;
             break;
+          // reset the simulation
+          case SDLK_r:
+            d.draw_background();
+            s.reset();
+            break;
           // all of these keys advance the simulation
           case SDLK_s:
           case SDLK_RETURN:
@@ -65,6 +70,8 @@ int main(int argc, char ** argv)
           case SDLK_DOWN:
             s.decrease_nbr_thresh();
             break;
+          case SDLK_d:
+            s.switch_display_mode();
         }
         break;
     }
